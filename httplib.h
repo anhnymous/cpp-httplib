@@ -869,6 +869,8 @@ private:
   bool routing(Request &req, Response &res, Stream &strm);
   bool handle_file_request(const Request &req, Response &res,
                            bool head = false);
+  bool parse_file_path(const Request& req, std::string& file_path,
+                                           std::string& file_name);
   bool dispatch_request(Request &req, Response &res, const Handlers &handlers);
   bool
   dispatch_request_for_content_reader(Request &req, Response &res,
@@ -6072,13 +6074,23 @@ inline bool Server::read_content_core(Stream &strm, Request &req, Response &res,
 
 inline bool Server::handle_file_request(const Request &req, Response &res,
                                         bool head) {
+  if (req.path.empty()) {
+    return false;
+  }
+
+  std::string file_path;
+  std::string file_name;
+  if(!parse_file_path(req, file_path, file_name)) {
+    return false;
+  }
+
   for (const auto &entry : base_dirs_) {
     // Prefix match
-    if (!req.path.compare(0, entry.mount_point.size(), entry.mount_point)) {
-      std::string sub_path = "/" + req.path.substr(entry.mount_point.size());
+    if (!file_path.compare(0, entry.mount_point.size(), entry.mount_point)) {
+      std::string sub_path = "/" + file_path.substr(entry.mount_point.size());
       if (detail::is_valid_path(sub_path)) {
         auto path = entry.base_dir + sub_path;
-        if (path.back() == '/') { path += "index.html"; }
+        if (path.back() == '/') { path += file_name; }
 
         if (detail::is_file(path)) {
           for (const auto &kv : entry.headers) {
@@ -6107,6 +6119,27 @@ inline bool Server::handle_file_request(const Request &req, Response &res,
     }
   }
   return false;
+}
+
+inline bool Server::parse_file_path(const Request& req, std::string& file_path,
+                                                        std::string& file_name)
+{
+  if (req.path.empty()) return false;
+  file_path = "";
+  file_name = "";
+
+  std::vector<std::string> tokens{};
+
+  std::stringstream ss(req.path);
+  string token;
+  while (std::getline(ss, token, '/')) {
+    tokens.emplace_back(token);
+  }
+
+  if ((tokens[tokens.size() - 1]).empty()) return false;
+  else file_name = tokens[tokens.size() - 1];
+  file_path = req.path.substr(0, req.path.find(file_name));
+  return true;
 }
 
 inline socket_t
